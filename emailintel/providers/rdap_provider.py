@@ -12,10 +12,16 @@ from .base import BaseProvider
 class RDAPProvider(BaseProvider):
     name = "public-rdap"
     category = "rdap"
+    source_name = "RDAP.org"
+    source_homepage = "https://rdap.org/"
+    description = "Queries public Registration Data Access Protocol records for custom domains."
+
+    def query_reference(self, target: TargetProfile) -> str:
+        return f"https://rdap.org/domain/{target.domain}"
 
     async def query(self, target: TargetProfile, scan_id: str) -> Evidence:
         started = time.perf_counter()
-        url = f"https://rdap.org/domain/{target.domain}"
+        url = self.query_reference(target)
         try:
             async with httpx.AsyncClient(
                 timeout=5.0,
