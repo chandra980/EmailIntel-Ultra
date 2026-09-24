@@ -1,0 +1,39 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "emailintel-ultra"
+version = "0.1.0"
+description = "Passive email OSINT and public identity intelligence framework"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [{name = "Chandra Kumar Yadav"}]
+dependencies = [
+  "typer>=0.12,<1",
+  "rich>=13.7,<15",
+  "httpx>=0.27,<1",
+  "dnspython>=2.6,<3",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8,<10",
+  "pytest-asyncio>=0.23,<2",
+  "ruff>=0.6,<1",
+]
+
+[project.scripts]
+emailintel = "emailintel.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["emailintel"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+pythonpath = ["."]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
