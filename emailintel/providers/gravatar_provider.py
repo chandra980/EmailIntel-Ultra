@@ -13,11 +13,17 @@ from .base import BaseProvider
 class GravatarProvider(BaseProvider):
     name = "gravatar-public-profile"
     category = "public-profile"
+    source_name = "Gravatar Public Profile API"
+    source_homepage = "https://gravatar.com/"
+    description = "Checks whether a public Gravatar profile exists for the normalized email hash."
+
+    def query_reference(self, target: TargetProfile) -> str:
+        digest = hashlib.sha256(target.normalized.strip().lower().encode()).hexdigest()
+        return f"https://api.gravatar.com/v3/profiles/{digest}"
 
     async def query(self, target: TargetProfile, scan_id: str) -> Evidence:
         started = time.perf_counter()
-        digest = hashlib.sha256(target.normalized.strip().lower().encode()).hexdigest()
-        url = f"https://api.gravatar.com/v3/profiles/{digest}"
+        url = self.query_reference(target)
         try:
             async with httpx.AsyncClient(
                 timeout=5.0,
