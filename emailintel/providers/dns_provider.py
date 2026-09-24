@@ -13,10 +13,19 @@ from .base import BaseProvider
 class DNSProvider(BaseProvider):
     name = "dns-mail-intelligence"
     category = "dns"
+    source_name = "Domain Name System (DNS)"
+    source_homepage = "https://www.iana.org/help/dns"
+    description = "Queries public DNS records such as MX, TXT, NS and DMARC."
+
+    def query_reference(self, target: TargetProfile) -> str:
+        return f"dns://{target.domain}"
 
     async def query(self, target: TargetProfile, scan_id: str) -> Evidence:
         started = time.perf_counter()
-        details: dict[str, object] = {"domain": target.domain}
+        details: dict[str, object] = {
+            "domain": target.domain,
+            "queried_record_types": ["MX", "TXT", "NS", "_dmarc TXT"],
+        }
         try:
             resolver = dns.asyncresolver.Resolver()
             resolver.lifetime = 4.0
@@ -43,6 +52,7 @@ class DNSProvider(BaseProvider):
                 title="Public mail-domain DNS records",
                 status=FindingStatus.VERIFIED,
                 confidence=0.99,
+                url=f"https://dns.google/resolve?name={target.domain}&type=MX",
                 evidence=f"MX records resolved for {target.domain}",
                 details=details,
                 latency_ms=int((time.perf_counter() - started) * 1000),
@@ -58,6 +68,7 @@ class DNSProvider(BaseProvider):
                 title="DNS lookup unavailable",
                 status=FindingStatus.ERROR,
                 confidence=0.0,
+                url=f"https://dns.google/resolve?name={target.domain}&type=MX",
                 details=details,
                 error=str(exc),
                 latency_ms=int((time.perf_counter() - started) * 1000),
