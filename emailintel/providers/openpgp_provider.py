@@ -13,13 +13,16 @@ from .base import BaseProvider
 class OpenPGPProvider(BaseProvider):
     name = "openpgp-public-key"
     category = "public-key"
+    source_name = "keys.openpgp.org"
+    source_homepage = "https://keys.openpgp.org/"
+    description = "Checks the public OpenPGP key directory for an explicitly published email identity."
+
+    def query_reference(self, target: TargetProfile) -> str:
+        return "https://keys.openpgp.org/vks/v1/by-email/" + quote(target.normalized, safe="")
 
     async def query(self, target: TargetProfile, scan_id: str) -> Evidence:
         started = time.perf_counter()
-        url = (
-            "https://keys.openpgp.org/vks/v1/by-email/"
-            + quote(target.normalized, safe="")
-        )
+        url = self.query_reference(target)
         try:
             async with httpx.AsyncClient(
                 timeout=5.0,
@@ -27,17 +30,11 @@ class OpenPGPProvider(BaseProvider):
                 headers={"User-Agent": "EmailIntel-Ultra/0.1"},
             ) as client:
                 response = await client.get(url)
-            if (
-                response.status_code == 200
-                and "BEGIN PGP PUBLIC KEY BLOCK" in response.text
-            ):
+            if response.status_code == 200 and "BEGIN PGP PUBLIC KEY BLOCK" in response.text:
                 status = FindingStatus.FOUND
                 confidence = 0.9
                 title = "Public OpenPGP key published for email"
-                details = {
-                    "key_block_present": True,
-                    "bytes": len(response.content),
-                }
+                details = {"key_block_present": True, "bytes": len(response.content)}
                 error = None
             elif response.status_code == 404:
                 status = FindingStatus.NOT_FOUND
