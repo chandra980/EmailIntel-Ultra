@@ -10,12 +10,14 @@ from pathlib import Path
 import typer
 from rich import box
 from rich.console import Console
+from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 
 from emailintel import __version__
 from emailintel.core.confidence import explain_confidence
 from emailintel.core.database import init_db, load_scan, save_scan
+from emailintel.core.models import FindingStatus
 from emailintel.core.planner import build_plan
 from emailintel.core.scanner import scan as run_scan
 from emailintel.core.validator import validate_email
@@ -27,7 +29,7 @@ app = typer.Typer(
     add_completion=False,
     help="EmailIntel Ultra — passive public email OSINT",
 )
-console = Console()
+console = Console(highlight=False)
 DATA_DIR = Path(os.getenv("EMAILINTEL_HOME", Path.home() / ".emailintel-ultra"))
 DB_PATH = DATA_DIR / "emailintel.db"
 REPORT_ROOT = Path("reports")
@@ -55,6 +57,188 @@ def get_stored(scan_id: str) -> dict:
             f"Scan {scan_id} was not found in the local database"
         )
     return data
+
+
+def _status_style(status: str) -> str:
+    if status in {"VERIFIED", "FOUND", "HIGH_CONFIDENCE"}:
+        return "bold green"
+    if status in {"NOT_FOUND", "SKIPPED", "UNKNOWN"}:
+        return "yellow"
+    if status in {"RATE_LIMITED", "BLOCKED", "UNAVAILABLE"}:
+        return "bold yellow"
+    if status == "ERROR":
+        return "bold red"
+    return "white"
+
+
+class TerminalProgress:
+    def __init__(self) -> None:
+        self.started = 0
+        self.finished = 0
+        self.total = 0
+
+    def __call__(self, event: dict) -> None:
+        kind = event.get("event")
+        if kind == "plan":
+            console.print()
+            console.print(
+                f"[bold cyan]SCAN PLAN[/bold cyan]  "
+                f"{escape(str(event.get('target_type', 'unknown')))}  "
+                f"mode={escape(str(event.get('mode', 'balanced')).upper())}"
+            )
+            console.print(
+                "[dim]Selected categories:[/dim] "
+                + ", ".join(event.get("selected_categories", []))
+            )
+        elif kind == "provider_set":
+            providers = event.get("providers", [])
+            self.total = len(providers)
+            table = Table(
+                title=f"Public Sources Selected ({self.total})",
+                box=box.ROUNDED,
+                show_lines=False,
+            )
+            table.add_column("#", justify="right", style="dim")
+            table.add_column("Provider", style="bold")
+            table.add_column("Source")
+            table.add_column("Category")
+            table.add_column("Query / Reference", overflow="fold")
+            for index, item in enumerate(providers, start=1):
+                ref = str(item.get("query_reference") or item.get("source_homepage") or "-")
+                table.add_row(
+                    str(index),
+                    str(item.get("provider", "")),
+                    str(item.get("source_name", "")),
+                    str(item.get("category", "")),
+                    ref,
+                )
+            console.print(table)
+            console.print(
+                "[dim]The scanner queries only these currently implemented "
+                "public/anonymous sources for this target.[/dim]\n"
+            )
+        elif kind == "start":
+            self.started += 1
+            ref = str(event.get("query_reference") or event.get("source_homepage") or "-")
+            console.print(
+                f"[cyan]QUERYING[/cyan] [{self.started}/{self.total or '?'}] "
+                f"[bold]{escape(str(event.get('source_name', event.get('provider', 'source'))))}[/bold]\n"
+                f"          provider: {escape(str(event.get('provider', '')))}\n"
+                f"          source:   {escape(ref)}"
+            )
+        elif kind == "result":
+            self.finished += 1
+            status = str(event.get("status", "UNKNOWN"))
+            style = _status_style(status)
+            latency = int(event.get("latency_ms") or 0)
+            url = str(event.get("url") or event.get("query_reference") or "")
+            console.print(
+                f"[{style}]RESULT {status}[/{style}] "
+                f"[{self.finished}/{self.total + 1 if self.total else '?'}] "
+                f"{escape(str(event.get('provider', '')))} — "
+                f"{escape(str(event.get('title', '')))} "
+                f"[dim]({latency} ms)[/dim]"
+            )
+            if url:
+                console.print(f"          [link={url}]{escape(url)}[/link]")
+        elif kind == "complete":
+            console.print(
+                f"\n[bold green]NETWORK CHECKS FINISHED[/bold green]  "
+                f"{event.get('duration_seconds', 0)}s · "
+                f"{event.get('providers_completed', 0)} evidence records · "
+                f"{event.get('errors', 0)} errors"
+            )
+
+
+def _print_final_result(result) -> None:
+    positive_states = {
+        FindingStatus.VERIFIED,
+        FindingStatus.FOUND,
+        FindingStatus.HIGH_CONFIDENCE,
+        FindingStatus.POSSIBLE,
+    }
+    positives = [item for item in result.evidence if item.status in positive_states]
+    source_urls = [item for item in result.evidence if item.url]
+
+    console.print()
+    console.print(Panel(
+        f"[bold]Target:[/bold] {escape(result.target.normalized)}\n"
+        f"[bold]Scan ID:[/bold] {result.scan_id}\n"
+        f"[bold]Mode:[/bold] {result.mode.upper()}\n"
+        f"[bold]Elapsed:[/bold] {result.duration_seconds}s\n"
+        f"[bold]Evidence records:[/bold] {len(result.evidence)}\n"
+        f"[bold]Positive findings:[/bold] {len(positives)}\n"
+        f"[bold]Source URLs:[/bold] {len(source_urls)}",
+        title="FINAL INVESTIGATION SUMMARY",
+        border_style="green",
+    ))
+
+    table = Table(
+        title="Complete Terminal Results",
+        box=box.ROUNDED,
+        show_lines=True,
+    )
+    table.add_column("#", justify="right", style="dim")
+    table.add_column("Status")
+    table.add_column("Source / Provider", style="bold")
+    table.add_column("Finding", overflow="fold")
+    table.add_column("Confidence", justify="right")
+    table.add_column("Time", justify="right")
+    table.add_column("Evidence ID")
+    for index, item in enumerate(result.evidence, start=1):
+        status = item.status.value
+        table.add_row(
+            str(index),
+            f"[{_status_style(status)}]{status}[/{_status_style(status)}]",
+            item.provider,
+            item.title,
+            f"{item.confidence:.2f}",
+            f"{item.latency_ms or 0} ms",
+            item.id,
+        )
+    console.print(table)
+
+    console.print("\n[bold cyan]SOURCE LINKS / WHERE THE DATA CAME FROM[/bold cyan]")
+    link_table = Table(box=box.SIMPLE, show_header=True)
+    link_table.add_column("#", justify="right")
+    link_table.add_column("Provider")
+    link_table.add_column("Status")
+    link_table.add_column("Direct Source / Query URL", overflow="fold")
+    row = 0
+    for item in result.evidence:
+        if not item.url:
+            continue
+        row += 1
+        link_table.add_row(
+            str(row),
+            item.provider,
+            item.status.value,
+            f"[link={item.url}]{item.url}[/link]",
+        )
+    if row:
+        console.print(link_table)
+    else:
+        console.print("[dim]No HTTP source URLs were produced in this scan.[/dim]")
+
+    console.print("\n[bold]Evidence details[/bold]")
+    for item in result.evidence:
+        console.print(
+            Panel(
+                f"[bold]Finding:[/bold] {escape(item.title)}\n"
+                f"[bold]Status:[/bold] {item.status.value}\n"
+                f"[bold]Provider:[/bold] {escape(item.provider)}\n"
+                f"[bold]Category:[/bold] {escape(item.category)}\n"
+                f"[bold]Confidence:[/bold] {item.confidence:.2f}\n"
+                f"[bold]Freshness:[/bold] {item.freshness.value}\n"
+                f"[bold]Evidence ID:[/bold] {item.id}\n"
+                f"[bold]Evidence Family:[/bold] {item.family_id or '-'}\n"
+                f"[bold]Source URL:[/bold] {escape(item.url or '-')}\n"
+                f"[bold]Observed Evidence:[/bold] {escape(item.evidence or '-')}\n"
+                f"[bold]Details:[/bold]\n{escape(json.dumps(item.details, indent=2, ensure_ascii=False, default=str))}\n"
+                f"[bold]Error:[/bold] {escape(item.error or '-')}",
+                border_style="blue" if item.status in positive_states else "dim",
+            )
+        )
 
 
 @app.command()
@@ -96,23 +280,32 @@ def plan(
 
 @app.command("providers")
 def providers_cmd() -> None:
-    """List implemented providers and their anonymous-access status."""
-    table = Table(title="Implemented Providers", box=box.SIMPLE_HEAVY)
+    """List implemented providers, public sources and access methods."""
+    table = Table(title="Implemented Public Sources", box=box.ROUNDED)
     table.add_column("Provider")
+    table.add_column("Source")
     table.add_column("Category")
-    table.add_column("Auth")
-    table.add_column("Status")
-    table.add_row("email-validator", "validation", "none", "WORKING")
+    table.add_column("Access")
+    table.add_column("Homepage", overflow="fold")
+    table.add_row(
+        "email-validator",
+        "Local deterministic validation",
+        "validation",
+        "local",
+        "-",
+    )
     for provider in provider_registry():
         table.add_row(
             provider.name,
+            provider.source_name,
             provider.category,
-            "none" if not provider.requires_auth else "required",
-            "IMPLEMENTED",
+            provider.access_method,
+            provider.source_homepage,
         )
     console.print(table)
     console.print(
-        "[dim]Runtime availability can still vary by network/source state.[/dim]"
+        "[dim]Runtime availability can vary. Providers are shown here only when "
+        "code is actually implemented in the repository.[/dim]"
     )
 
 
@@ -129,7 +322,7 @@ def coverage() -> None:
     for category, count in sorted(counts.items()):
         table.add_row(category, str(count), "AVAILABLE")
     console.print(table)
-    console.print(f"Total implemented provider checks: {sum(counts.values())}")
+    console.print(f"Total implemented checks: {sum(counts.values())}")
 
 
 @app.command()
@@ -197,8 +390,13 @@ def scan_cmd(
         False,
         help="Redact email in terminal summary",
     ),
+    quiet: bool = typer.Option(
+        False,
+        "--quiet",
+        help="Suppress live provider trace; final formatted results still print",
+    ),
 ) -> None:
-    """Scan a single email using implemented anonymous public providers."""
+    """Scan one email and show full live source trace + formatted terminal results."""
     if fast:
         mode = "fast"
     if deep:
@@ -212,43 +410,25 @@ def scan_cmd(
         raise typer.Exit(1)
 
     banner()
-    shown = (
-        mask_email(checked.profile.normalized)
-        if redact
-        else checked.profile.normalized
-    )
+    shown = mask_email(checked.profile.normalized) if redact else checked.profile.normalized
     console.print(f"[bold]Target:[/bold] {shown}")
     console.print(f"[bold]Mode:[/bold] {mode.upper()}")
-
-    with console.status(
-        "[bold blue]Running passive public-source checks...[/bold blue]"
-    ):
-        result = asyncio.run(
-            run_scan(
-                checked.profile,
-                mode,
-                max_concurrency=max_concurrency,
-            )
-        )
-
-    table = Table(
-        title=f"Investigation {result.scan_id}",
-        box=box.SIMPLE_HEAVY,
+    console.print(
+        "[dim]Live trace is enabled. Every implemented public source selected "
+        "for this scan will be shown below before and after its query.[/dim]"
     )
-    table.add_column("Status")
-    table.add_column("Provider")
-    table.add_column("Finding")
-    table.add_column("Confidence", justify="right")
-    table.add_column("Latency", justify="right")
-    for item in result.evidence:
-        table.add_row(
-            item.status.value,
-            item.provider,
-            item.title,
-            f"{item.confidence:.2f}",
-            f"{item.latency_ms or 0} ms",
+
+    progress = None if quiet else TerminalProgress()
+    result = asyncio.run(
+        run_scan(
+            checked.profile,
+            mode,
+            max_concurrency=max_concurrency,
+            progress=progress,
         )
-    console.print(table)
+    )
+
+    _print_final_result(result)
 
     output_dir = REPORT_ROOT / result.scan_id
     formats = (
@@ -276,20 +456,14 @@ def scan_cmd(
     if not no_history:
         save_scan(DB_PATH, result)
 
-    console.print(
-        f"\n[bold green]SCAN COMPLETE[/bold green]  "
-        f"{result.duration_seconds}s"
-    )
-    console.print(
-        "Evidence families: "
-        f"{len({item.family_id for item in result.evidence if item.family_id})}"
-    )
+    console.print("\n[bold cyan]SAVED REPORTS[/bold cyan]")
     for path in generated:
-        console.print(f"Report: {path}")
+        console.print(f"  {path.resolve()}")
 
     if result.errors:
         console.print(
-            f"[yellow]Partial provider errors: {len(result.errors)}[/yellow]"
+            f"\n[yellow]Scan completed with {len(result.errors)} provider error(s). "
+            "Other provider results and reports were preserved.[/yellow]"
         )
         raise typer.Exit(2)
 
@@ -421,10 +595,16 @@ def feature(name: str) -> None:
             "custom-domain email targets.",
             "emailintel plan EMAIL",
         ),
+        "live-output": (
+            "Live Terminal Output",
+            "Shows every selected public source, query/reference URL, result status, "
+            "latency, evidence ID and final source links directly in the terminal.",
+            "emailintel scan EMAIL --deep",
+        ),
     }
     item = docs.get(name.lower())
     if not item:
-        console.print("Available: confidence, timeline, coverage, plan")
+        console.print("Available: confidence, timeline, coverage, plan, live-output")
         raise typer.Exit(1)
     title, meaning, command = item
     console.print(Panel.fit(
