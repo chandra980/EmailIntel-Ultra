@@ -998,3 +998,265 @@ There is no weaker mode.
 ---
 
 # 41. OPTIONAL OPERATIONAL FLAGS ONLY
+
+Allow:
+
+```text
+--format
+--redact
+--no-history
+--no-cache
+--quiet
+--plain
+--no-color
+--max-concurrency
+--debug
+```
+
+These do not change investigation depth.
+
+---
+
+# 42. DEBUG VIEW IS HIDDEN BY DEFAULT
+
+Raw technical output only under:
+
+```bash
+emailintel scan EMAIL --debug
+```
+
+Then display:
+
+```text
+HTTP status
+retry count
+parser version
+cache state
+request timing
+```
+
+---
+
+# 43. AUTOMATIC FAILURE ISOLATION
+
+One provider failure never destroys the entire scan.
+
+Example:
+
+```text
+31 Eligible Sources
+
+29 COMPLETE
+1 RATE LIMITED
+1 UNAVAILABLE
+
+Investigation continued successfully.
+```
+
+---
+
+# 44. PROFESSIONAL SOURCE LIMITATION
+
+Example:
+
+```text
+SOURCE UNAVAILABLE
+
+crt.sh did not respond within the configured timeout.
+
+Impact:
+Certificate intelligence is incomplete.
+
+Other evidence is unaffected.
+```
+
+---
+
+# 45. PROFESSIONAL ZERO-RESULT STATE
+
+If no useful public reference is found:
+
+```text
+NO VERIFIED PUBLIC IDENTITY REFERENCES FOUND
+
+Infrastructure intelligence was still collected.
+
+This does not prove that no public references exist.
+```
+
+---
+
+# 46. NO RAW “GATHERING” LANGUAGE
+
+Completely remove primary UX words:
+
+```text
+Gathering
+Harvesting
+Scraping
+Dumping
+Collecting victim data
+```
+
+Replace with:
+
+```text
+Analyzing
+Investigating
+Querying Public Source
+Validating
+Correlating
+Verifying
+Processing Evidence
+```
+
+---
+
+# 47. DEEP INTELLIGENCE BRANDING
+
+Throughout interface use phrases like:
+
+```text
+Deep Intelligence Engine
+Public Source Intelligence
+Evidence Engine
+Correlation Engine
+Provider Intelligence
+Investigation Workspace
+Evidence Graph
+Source Coverage
+```
+
+---
+
+# 48. PERFORMANCE ENGINE
+
+Use:
+
+```text
+asyncio
+connection pooling
+bounded concurrency
+per-host limits
+adaptive timeouts
+safe retry/backoff
+request deduplication
+cache
+provider health history
+latency history
+circuit breakers
+```
+
+---
+
+# 49. SAFE AGGRESSIVE BEHAVIOR
+
+Aggressive means:
+
+```text
+maximum coverage
+maximum relevant providers
+parallel execution
+deeper evidence validation
+correlation
+source independence
+historical context
+provider redundancy
+```
+
+Aggressive NEVER means:
+
+```text
+CAPTCHA bypass
+rate-limit bypass
+proxy evasion
+credential attacks
+private login probing
+stolen-data access
+```
+
+---
+
+# 50. MAIN PRODUCT EXPERIENCE
+
+Ultimate flow:
+
+```text
+EMAILINTEL ULTRA
+        ↓
+NEW INVESTIGATION
+        ↓
+TARGET ANALYSIS
+        ↓
+DEEP INTELLIGENCE PLAN
+        ↓
+ETA
+        ↓
+FULL DEEP SCAN
+        ↓
+LIVE INTELLIGENCE DASHBOARD
+        ↓
+CORRELATION
+        ↓
+VERIFICATION
+        ↓
+DEEP INVESTIGATION COMPLETE
+        ↓
+FINDINGS / EVIDENCE / TIMELINE / SOURCES / GRAPH / REPORTS
+```
+
+---
+
+# FINAL DESIGN PRINCIPLE
+
+The interface must communicate:
+
+```text
+POWERFUL
+PRECISE
+DEEP
+PROFESSIONAL
+CONTROLLED
+TRANSPARENT
+```
+
+not:
+
+```text
+MESSY
+RAW
+CONFUSING
+FAKE-HACKER
+```
+
+When the scan is active, the user should feel like they are operating a polished intelligence workstation.
+
+The visual identity should be:
+
+> **Dark Terminal + Light Green Intelligence UI**
+
+The operational identity should be:
+
+> **One Command + Full Deep Scan**
+
+The analytical identity should be:
+
+> **Every Finding Must Have Evidence**
+
+The user should immediately understand:
+
+- what is running
+- what has finished
+- what is still running
+- what was found
+- where it was found
+- how reliable it is
+- how long it took
+- what the source URL is
+- what the finding does and does not prove
+
+No normal scan mode should remain in the primary workflow.
+
+The default behavior is always:
+
+# FULL DEEP PUBLIC INTELLIGENCE SCAN
