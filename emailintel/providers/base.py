@@ -16,15 +16,15 @@ class BaseProvider(ABC):
     source_homepage = ""
     access_method = "anonymous-public"
     description = ""
+    expected_seconds = 4.0
 
     def eligible(self, target: TargetProfile, plan: ScanPlan) -> bool:
         return self.category in plan.selected_categories
 
     def query_reference(self, target: TargetProfile) -> str:
-        """Return the public source/query URL shown to the operator before scanning."""
         return self.source_homepage
 
-    def source_metadata(self, target: TargetProfile) -> dict[str, str]:
+    def source_metadata(self, target: TargetProfile) -> dict[str, object]:
         return {
             "provider": self.name,
             "category": self.category,
@@ -33,6 +33,7 @@ class BaseProvider(ABC):
             "access_method": self.access_method,
             "description": self.description,
             "query_reference": self.query_reference(target),
+            "expected_seconds": self.expected_seconds,
         }
 
     @abstractmethod
